@@ -1,0 +1,107 @@
+# Byte-compiled / optimized / AST files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+# (ExcelMacroAssistant.spec is tracked, but temporary/backup files are ignored)
+*.manifest
+*.spec.bak
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Environments & credentials
+.env
+.env.*
+!.env.example
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Local configuration files
+config.yaml
+config.local.yaml
+!config.example.yaml
+
+# Output directories & backups created by Excel Macro Assistant
+Macro Assistant Output/
+
+# Temporary Excel lock/swap files
+~$*.xlsx
+~$*.xlsm
+~$*.xls
+
+# Logs & databases
+*.log
+logs/
+*.sqlite
+*.db
+
+# Operating System Files
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux / Editor temporary & swap files
+*~
+*.swp
+*.swo
+
+# IDEs and Code Editors
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
