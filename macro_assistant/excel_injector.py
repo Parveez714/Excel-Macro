@@ -192,17 +192,10 @@ def inject_macro(source_path: str | Path, code: str) -> InjectionResult:
         output_path = source.with_name(f"Macro_{source.stem} ({counter}).xlsm")
         counter += 1
 
-    # Also save the .bas file as a companion export
-    module_path = output_path.with_suffix(".bas")
-    try:
-        bas_content = f'Attribute VB_Name = "{macro_name}"\n\n{code.strip()}\n'
-        module_path.write_text(bas_content, encoding="utf-8")
-    except Exception:
-        module_path = None
-
     pythoncom.CoInitialize()
     excel = None
     workbook = None
+
     component = None
     module = None
     compile_checked = False
@@ -240,7 +233,7 @@ def inject_macro(source_path: str | Path, code: str) -> InjectionResult:
         workbook.SaveAs(str(output_path), FileFormat=52)
         workbook.Close(SaveChanges=True)
         workbook = None
-        return InjectionResult(output_path, macro_name, compile_checked, module_path=module_path, applied_in_excel=True)
+        return InjectionResult(output_path, macro_name, compile_checked, module_path=None, applied_in_excel=True)
     except (TrustAccessError, CompileCheckError):
         raise
     except Exception as error:

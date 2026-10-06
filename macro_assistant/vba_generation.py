@@ -3,7 +3,21 @@ import re
 
 from .providers.factory import get_provider
 
-SYSTEM_PROMPT = """You write safe, maintainable Excel VBA for a non-technical user. When calculations, aggregations, conditional values, or summaries are requested, write formulas directly into cells (for example using .Formula = "=SUM(B2:B10)" or .Formula2 = "=AVERAGE(...)") rather than hardcoding static calculation results, so that when users open the workbook in Excel, all dynamic Excel formulas are visible and live in the formula bar. Return exactly one valid JSON object with exactly two string fields: "vba_code" and "summary". The vba_code value must contain raw VBA only, without Markdown fences. The summary must be 2-3 plain-English sentences explaining what the macro and formulas will do. Write code for a standard VBA module only. Do not create buttons, event hooks, Workbook_Open procedures, or modify workbook structure unless the user explicitly requests such behavior. Do not use shell commands, file deletion, registry access, or external network calls. Make the macro safe to run and include a clearly named public Sub as its entry point. Do not include the user's workbook data in your response."""
+SYSTEM_PROMPT = r'''You write safe, maintainable Excel VBA for a non-technical user.
+VBA SYNTAX RULES:
+1. Double quotes inside VBA string literals MUST ALWAYS be escaped using double quotes (""), NEVER backslash (\"). For example, write Formula1:="=$K2=""Completed""" instead of Formula1:="=$K2=\"Completed\"". Backslash escaping does not exist in VBA and causes an immediate compilation syntax error.
+2. When referencing worksheets and formatting ranges, declare ws As Worksheet and rng As Range (e.g., Set ws = ThisWorkbook.Sheets("SheetName") and Set rng = ws.Range("A2:L63")). Do not declare ws As Range or call .Rows("2:63") on a Range.
+3. When calculations, aggregations, conditional values, or summaries are requested, write formulas directly into cells (for example using .Formula = "=SUM(B2:B10)" or .Formula2 = "=AVERAGE(...)") rather than hardcoding static calculation results, so that when users open the workbook in Excel, all dynamic Excel formulas are visible and live in the formula bar.
+
+Return exactly one valid JSON object with exactly two string fields: "vba_code" and "summary". The vba_code value must contain raw VBA only, without Markdown fences. The summary must be 2-3 plain-English sentences explaining what the macro and formulas will do. Write code for a standard VBA module only. Do not create buttons, event hooks, Workbook_Open procedures, or modify workbook structure unless the user explicitly requests such behavior. Do not use shell commands, file deletion, registry access, or external network calls. Make the macro safe to run and include a clearly named public Sub as its entry point. Do not include the user's workbook data in your response.'''
+
+
+
+def _clean_vba_syntax(code: str) -> str:
+    # Fix accidental C/Python-style backslash escaped quotes in VBA code: \" -> ""
+    # In VBA strings, quotes must be doubled (""), not backslash escaped (\")
+    code = re.sub(r'\\"', '""', code)
+    return code
 
 
 def parse_generation_response(response: str) -> dict[str, str]:
@@ -27,7 +41,9 @@ def parse_generation_response(response: str) -> dict[str, str]:
     code = code.strip()
     if code.startswith("```") or code.endswith("```"):
         raise ValueError("The VBA code must not contain Markdown fences. Preview the request again to retry.")
+    code = _clean_vba_syntax(code)
     return {"vba_code": code, "summary": summary.strip()}
+
 
 
 def build_user_prompt(request: str, workbook_context: str, repair_error: str | None = None) -> str:
