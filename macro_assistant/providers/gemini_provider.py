@@ -18,16 +18,13 @@ class GeminiProvider(LLMProvider):
         config = {
             "system_instruction": system_prompt,
             "response_mime_type": "application/json",
-            "response_schema": {
-                "type": "OBJECT",
-                "properties": {"vba_code": {"type": "STRING"}, "summary": {"type": "STRING"}},
-                "required": ["vba_code", "summary"],
-            },
+            "max_output_tokens": 8192,
         }
         if fast:
             # Macro writing doesn't need long reasoning; this cuts latency and quota use.
             config["thinking_config"] = {"thinking_level": "low"}
         return self.client.models.generate_content(model=self.model, contents=user_prompt, config=config)
+
 
     def generate(self, system_prompt: str, user_prompt: str) -> str:
         try:
