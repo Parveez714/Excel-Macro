@@ -9,12 +9,13 @@ from tkinter import filedialog, messagebox, ttk
 from dotenv import load_dotenv
 
 from .config import app_directory, configured_provider, load_config
-from .excel_injector import CompileCheckError, TrustAccessError, enable_vbom_for_current_user, inject_macro
 from .logging_setup import get_logger
 from .providers.factory import available_providers
-from .safety import scan_vba
-from .vba_generation import generate_macro
+from .python_generation import generate_transformation
+from .safety import scan_code
 from .workbook_context import read_workbook_context
+from .workbook_modifier import apply_transformation
+
 
 
 class MacroAssistantApp:
@@ -35,8 +36,8 @@ class MacroAssistantApp:
 
         page = ttk.Frame(root, padding=(28, 24))
         page.pack(fill="both", expand=True)
-        ttk.Label(page, text="Excel Macro Assistant", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(page, text="Describe a task. Preview the macro. Save a new macro-enabled copy.", style="Subtitle.TLabel").pack(anchor="w", pady=(3, 20))
+        ttk.Label(page, text="Excel Assistant", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(page, text="Describe a task. Preview formulas and changes. Save a ready-to-use updated copy.", style="Subtitle.TLabel").pack(anchor="w", pady=(3, 20))
 
         ttk.Label(page, text="1  Workbook", style="Section.TLabel").pack(anchor="w", pady=(0, 7))
         file_row = ttk.Frame(page)
@@ -45,7 +46,7 @@ class MacroAssistantApp:
         self.file_entry.pack(side="left", fill="x", expand=True, ipady=6)
         ttk.Button(file_row, text="Browse...", command=self._browse).pack(side="left", padx=(9, 0), ipady=3)
 
-        ttk.Label(page, text="2  What should the macro do?", style="Section.TLabel").pack(anchor="w", pady=(0, 7))
+        ttk.Label(page, text="2  What should be done to this workbook?", style="Section.TLabel").pack(anchor="w", pady=(0, 7))
         self.request_text = tk.Text(page, height=5, wrap="word", font=("Segoe UI", 10), relief="solid", bd=1, padx=9, pady=8)
         self.request_text.pack(fill="x", pady=(0, 14))
 
@@ -58,12 +59,11 @@ class MacroAssistantApp:
 
         button_row = ttk.Frame(page)
         button_row.pack(fill="x", pady=(0, 15))
-        self.preview_button = ttk.Button(button_row, text="Preview macro", style="Primary.TButton", command=self._preview)
+        self.preview_button = ttk.Button(button_row, text="Preview changes", style="Primary.TButton", command=self._preview)
         self.preview_button.pack(side="left", ipadx=12, ipady=5)
         self.apply_button = ttk.Button(button_row, text="Apply to a new copy", command=self._apply, state="disabled")
         self.apply_button.pack(side="left", padx=(10, 0), ipadx=8, ipady=5)
-        if sys.platform == "win32":
-            ttk.Button(button_row, text="Enable Excel access", command=self._enable_vbom).pack(side="right", ipady=4)
+
 
 
         ttk.Label(page, text="3  Preview", style="Section.TLabel").pack(anchor="w", pady=(0, 7))
@@ -122,7 +122,7 @@ class MacroAssistantApp:
         try:
             context = read_workbook_context(source)
             config = load_config(provider_override=provider_id)
-            result = generate_macro(config.provider, config.model, config.api_key, request, context)
+            result = generate_transformation(config.provider, config.model, config.api_key, request, context)
             data = {**result, "request": request, "context": context, "provider": config.provider, "model": config.model}
             self.root.after(0, lambda: self._preview_done(data))
             self.logger.info("preview_completed")
@@ -132,12 +132,13 @@ class MacroAssistantApp:
 
     def _preview_done(self, data: dict):
         self.preview_data = data
-        findings = scan_vba(data["vba_code"])
+        code_str = data.get("python_code") or data.get("vba_code", "")
+        findings = scan_code(code_str)
         self._set_text(self.summary, data["summary"])
         if findings:
-            self.warning.configure(text="Safety review needed: " + "; ".join(findings) + ". Apply will ask you to confirm before adding this code.")
+            self.warning.configure(text="Safety review needed: " + "; ".join(findings) + ". Apply will ask you to confirm before running this.")
         else:
-            self.warning.configure(text="No listed high-risk operations were detected. This automated check cannot guarantee that all VBA is safe.")
+            self.warning.configure(text="No listed high-risk operations were detected.")
         self.apply_button.configure(state="normal")
         self._busy(False, "Preview ready. Review the summary before applying.")
 
@@ -149,40 +150,38 @@ class MacroAssistantApp:
             data["request"] != self.request_text.get("1.0", "end").strip()
             or data["provider"] != self.provider.get()
         ):
-            messagebox.showinfo("Preview again", "The request or AI provider changed. Preview the macro again before applying it.", parent=self.root)
+            messagebox.showinfo("Preview again", "The request or AI provider changed. Preview again before applying.", parent=self.root)
             self.apply_button.configure(state="disabled")
             return
-        findings = scan_vba(data["vba_code"])
+        code_str = data.get("python_code") or data.get("vba_code", "")
+        findings = scan_code(code_str)
         if findings:
             proceed = messagebox.askyesno(
                 "Review safety warning",
-                "The macro contains operations that may affect files, Windows settings, or internet connections:\n\n"
+                "The code contains operations that may affect files or system settings:\n\n"
                 + "\n".join(f"• {finding}" for finding in findings)
-                + "\n\nOnly continue if you understand and trust these operations. Add this macro anyway?",
+                + "\n\nOnly continue if you understand and trust these operations. Apply anyway?",
                 parent=self.root,
             )
             if not proceed:
                 return
-        self._busy(True, "Adding the macro to a new workbook copy...")
+        self._busy(True, "Applying formulas and transformations to a new copy...")
         self.logger.info("apply_started")
         threading.Thread(target=self._apply_worker, args=(Path(self.file_path.get()), data, bool(findings)), daemon=True).start()
 
     def _apply_worker(self, source: Path, data: dict, risk_confirmed: bool):
         current = data
+        code_str = current.get("python_code") or current.get("vba_code", "")
         for attempt in range(3):
-            findings = scan_vba(current["vba_code"])
+            findings = scan_code(code_str)
             if findings and (attempt > 0 or not risk_confirmed):
-                error = RuntimeError("An automatic repair produced code requiring a new safety review. Preview the macro again before applying.")
+                error = RuntimeError("An automatic repair produced code requiring a new safety review. Preview again before applying.")
                 self.root.after(0, lambda error=error: self._failed(error))
                 return
             try:
-                result = inject_macro(source, current["vba_code"])
+                result = apply_transformation(source, code_str)
                 self.logger.info("apply_completed")
                 self.root.after(0, lambda result=result: self._apply_done(result))
-                return
-            except TrustAccessError as error:
-                self.logger.info("apply_blocked_trust_setting")
-                self.root.after(0, lambda error=error: self._failed(error, trust_access=True))
                 return
             except Exception as error:
                 if attempt == 2:
@@ -191,7 +190,7 @@ class MacroAssistantApp:
                     return
                 try:
                     config = load_config(provider_override=data["provider"])
-                    current = generate_macro(
+                    current = generate_transformation(
                         config.provider,
                         config.model,
                         config.api_key,
@@ -199,6 +198,7 @@ class MacroAssistantApp:
                         data["context"],
                         repair_error=str(error),
                     )
+                    code_str = current.get("python_code") or current.get("vba_code", "")
                 except Exception as repair_error:
                     self.logger.info("repair_failed")
                     self.root.after(0, lambda error=repair_error: self._failed(error))
@@ -206,32 +206,14 @@ class MacroAssistantApp:
 
     def _apply_done(self, result):
         self._busy(False, f"Saved to: {result.output_path}")
-        if result.applied_in_excel:
-            compile_note = "Excel's VBA editor accepted a compile check." if result.compile_checked else "Excel's automatic compile check was unavailable."
-            module_note = f"\n\nVBA module export saved to:\n{result.module_path}" if result.module_path else ""
-            messagebox.showinfo(
-                "Macro Applied Successfully",
-                f"The macro '{result.macro_name}' was injected and executed!\n\n"
-                f"New output workbook:\n{result.output_path}"
-                f"{module_note}\n\n"
-                f"When you open the new workbook, you can view the changes immediately, or press Alt + F8 to run the macro again if needed.\n\n"
-                f"{compile_note}",
-                parent=self.root,
-            )
-        else:
-            module_info = f"\n\nVBA Module (.bas):\n{result.module_path}" if result.module_path else ""
-            messagebox.showinfo(
-                "Macro Ready for Excel",
-                f"A new workbook and the VBA macro module have been created successfully!\n\n"
-                f"Workbook copy:\n{result.output_path}"
-                f"{module_info}\n\n"
-                f"To run the macro inside Excel:\n"
-                f"1. Open the workbook in Microsoft Excel.\n"
-                f"2. Press Alt + F11 (or Option + F11 on Mac) to open the VBA Editor.\n"
-                f"3. Click File > Import File... and choose the .bas file.\n"
-                f"4. Press Alt + F8 (or Option + F8 on Mac) to select and run '{result.macro_name}'.",
-                parent=self.root,
-            )
+        messagebox.showinfo(
+            "Changes Applied Successfully",
+            f"All transformations and live formulas have been applied successfully!\n\n"
+            f"New output workbook:\n{result.output_path}\n\n"
+            f"When you open this workbook in Excel (on Windows, macOS, or Linux), you will see all changes and dynamic formulas ready in the formula bar—no macros or manual steps required!",
+            parent=self.root,
+        )
+
 
 
     def _failed(self, error: Exception, trust_access: bool = False):
