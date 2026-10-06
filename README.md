@@ -1,13 +1,14 @@
 # Excel Macro Assistant
 
-A Windows desktop app for turning a plain-language task into a VBA macro and saving it in a new `.xlsm` copy of an Excel workbook. It uses desktop Microsoft Excel through COM automation. It does not modify the selected source workbook.
+A cross-platform desktop app for turning a plain-language task into a VBA macro and saving it alongside your Excel workbook. Supported across **Windows**, **macOS**, and **Linux**.
 
 ## Requirements
 
-- Windows 10 or 11
-- Desktop Microsoft Excel
-- Python 3.10 or newer for running from source
+- **Windows, macOS, or Linux**
+- Python 3.10 or newer
+- Microsoft Excel (for running the generated macros via `Alt + F8` / `Option + F8`)
 - A Gemini API key and a Gemini model name, or OpenAI credentials if selecting OpenAI
+
 
 ## Run from source
 

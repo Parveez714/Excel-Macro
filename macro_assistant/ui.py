@@ -1,8 +1,10 @@
 import os
+import sys
 import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+
 
 from dotenv import load_dotenv
 
@@ -60,7 +62,9 @@ class MacroAssistantApp:
         self.preview_button.pack(side="left", ipadx=12, ipady=5)
         self.apply_button = ttk.Button(button_row, text="Apply to a new copy", command=self._apply, state="disabled")
         self.apply_button.pack(side="left", padx=(10, 0), ipadx=8, ipady=5)
-        ttk.Button(button_row, text="Enable Excel access", command=self._enable_vbom).pack(side="right", ipady=4)
+        if sys.platform == "win32":
+            ttk.Button(button_row, text="Enable Excel access", command=self._enable_vbom).pack(side="right", ipady=4)
+
 
         ttk.Label(page, text="3  Preview", style="Section.TLabel").pack(anchor="w", pady=(0, 7))
         self.summary = tk.Text(page, height=6, wrap="word", font=("Segoe UI", 10), relief="solid", bd=1, padx=9, pady=8, state="disabled")
@@ -201,16 +205,34 @@ class MacroAssistantApp:
                     return
 
     def _apply_done(self, result):
-        self._busy(False, f"Saved the new workbook to: {result.output_path}")
-        compile_note = "Excel's VBA editor accepted a compile check." if result.compile_checked else "Excel's automatic compile check was unavailable."
-        messagebox.showinfo(
-            "Macro Applied Successfully",
-            f"The macro '{result.macro_name}' was executed and all changes have been saved!\n\n"
-            f"New output workbook:\n{result.output_path}\n\n"
-            f"When you open the new workbook, you will see the updated data and formatting immediately without needing to run any macro manually.\n\n"
-            f"{compile_note}",
-            parent=self.root,
-        )
+        self._busy(False, f"Saved to: {result.output_path}")
+        if result.applied_in_excel:
+            compile_note = "Excel's VBA editor accepted a compile check." if result.compile_checked else "Excel's automatic compile check was unavailable."
+            module_note = f"\n\nVBA module export saved to:\n{result.module_path}" if result.module_path else ""
+            messagebox.showinfo(
+                "Macro Applied Successfully",
+                f"The macro '{result.macro_name}' was injected and executed!\n\n"
+                f"New output workbook:\n{result.output_path}"
+                f"{module_note}\n\n"
+                f"When you open the new workbook, you can view the changes immediately, or press Alt + F8 to run the macro again if needed.\n\n"
+                f"{compile_note}",
+                parent=self.root,
+            )
+        else:
+            module_info = f"\n\nVBA Module (.bas):\n{result.module_path}" if result.module_path else ""
+            messagebox.showinfo(
+                "Macro Ready for Excel",
+                f"A new workbook and the VBA macro module have been created successfully!\n\n"
+                f"Workbook copy:\n{result.output_path}"
+                f"{module_info}\n\n"
+                f"To run the macro inside Excel:\n"
+                f"1. Open the workbook in Microsoft Excel.\n"
+                f"2. Press Alt + F11 (or Option + F11 on Mac) to open the VBA Editor.\n"
+                f"3. Click File > Import File... and choose the .bas file.\n"
+                f"4. Press Alt + F8 (or Option + F8 on Mac) to select and run '{result.macro_name}'.",
+                parent=self.root,
+            )
+
 
     def _failed(self, error: Exception, trust_access: bool = False):
         self._busy(False, "The task could not be completed.")
