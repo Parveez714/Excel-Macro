@@ -13,7 +13,7 @@ def _read_with_openpyxl(path: Path) -> list[dict]:
         sheets = []
         for name in wb.sheetnames[:100]:
             sheet = wb[name]
-            dimensions = sheet.dimensions or "A1"
+            dimensions = getattr(sheet, "dimensions", None) or (sheet.calculate_dimension() if hasattr(sheet, "calculate_dimension") else "A1")
             headers = []
             header_row = 1
 

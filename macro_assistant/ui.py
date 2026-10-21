@@ -127,7 +127,7 @@ class MacroAssistantApp:
             self.root.after(0, lambda: self._preview_done(data))
             self.logger.info("preview_completed")
         except Exception as error:
-            self.logger.info("preview_failed")
+            self.logger.warning(f"preview_failed: {error}")
             self.root.after(0, lambda error=error: self._failed(error))
 
     def _preview_done(self, data: dict):
@@ -184,6 +184,7 @@ class MacroAssistantApp:
                 self.root.after(0, lambda result=result: self._apply_done(result))
                 return
             except Exception as error:
+                self.logger.warning(f"apply_attempt_{attempt}_failed: {error}")
                 if attempt == 2:
                     self.logger.info("apply_failed")
                     self.root.after(0, lambda error=error: self._failed(error))
@@ -200,8 +201,9 @@ class MacroAssistantApp:
                     )
                     code_str = current.get("python_code") or current.get("vba_code", "")
                 except Exception as repair_error:
-                    self.logger.info("repair_failed")
-                    self.root.after(0, lambda error=repair_error: self._failed(error))
+                    self.logger.warning(f"repair_failed: {repair_error}")
+                    combined_error = RuntimeError(f"Could not apply changes to workbook: {error}\n\n(Auto-repair also failed: {repair_error})")
+                    self.root.after(0, lambda error=combined_error: self._failed(error))
                     return
 
     def _apply_done(self, result):

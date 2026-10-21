@@ -26,39 +26,53 @@ def _clean_vba_syntax(code: str) -> str:
 
 def parse_generation_response(response: str) -> dict[str, str]:
     text = response.strip()
-    fence = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.IGNORECASE | re.DOTALL)
-    if fence:
-        text = fence.group(1).strip()
-    start, end = text.find("{"), text.rfind("}")
-    if start != -1 and end > start:
-        text = text[start : end + 1]
+    if not text:
+        raise ValueError("The AI response was not valid JSON. Preview the request again to retry.")
+
+    fence = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, flags=re.IGNORECASE | re.DOTALL)
+    candidate = fence.group(1).strip() if fence else text
+
+    start, end = candidate.find("{"), candidate.rfind("}")
+    json_candidate = candidate[start : end + 1] if (start != -1 and end > start) else None
+    if not json_candidate:
+        start_orig, end_orig = text.find("{"), text.rfind("}")
+        if start_orig != -1 and end_orig > start_orig:
+            json_candidate = text[start_orig : end_orig + 1]
 
     payload = None
-    try:
-        payload = json.loads(text, strict=False)
-    except json.JSONDecodeError:
-        # Resilient fallback: LLMs often output internal quotes like `rng.Formula = "=IF(G2="""",0,G2)"`
-        # which breaks strict JSON parsers. Extract fields directly using structured regex.
-        code_match = re.search(r'"vba_code"\s*:\s*"(.*?)"\s*,\s*"summary"\s*:\s*"(.*?)"\s*\}', text, re.DOTALL)
-        if not code_match:
-            # Try alternate key ordering
-            code_match = re.search(r'"summary"\s*:\s*"(.*?)"\s*,\s*"vba_code"\s*:\s*"(.*?)"\s*\}', text, re.DOTALL)
-            if code_match:
-                payload = {"summary": code_match.group(1), "vba_code": code_match.group(2)}
-        else:
-            payload = {"vba_code": code_match.group(1), "summary": code_match.group(2)}
+    if json_candidate:
+        try:
+            payload = json.loads(json_candidate, strict=False)
+        except json.JSONDecodeError:
+            pass
 
-        if payload:
-            # Unescape JSON control characters
-            for k in ("vba_code", "summary"):
-                val = payload[k]
-                val = val.replace(r"\n", "\n").replace(r"\r", "\r").replace(r"\t", "\t")
-                val = val.replace(r'\"', '"')
-                payload[k] = val
+        if not payload:
+            try:
+                cleaned = re.sub(r'(?<!\\)\\(?!["\\/bfnrtu])', r'\\\\', json_candidate)
+                payload = json.loads(cleaned, strict=False)
+            except Exception:
+                pass
 
+        if not payload:
+            code_match = re.search(r'"vba_code"\s*:\s*"(.*?)"\s*,\s*"summary"\s*:\s*"(.*?)"\s*\}', json_candidate, re.DOTALL)
+            if not code_match:
+                code_match = re.search(r'"summary"\s*:\s*"(.*?)"\s*,\s*"vba_code"\s*:\s*"(.*?)"\s*\}', json_candidate, re.DOTALL)
+                if code_match:
+                    payload = {"summary": code_match.group(1), "vba_code": code_match.group(2)}
+            else:
+                payload = {"vba_code": code_match.group(1), "summary": code_match.group(2)}
 
     if not isinstance(payload, dict):
         raise ValueError("The AI response was not valid JSON. Preview the request again to retry.")
+
+    for k in ("vba_code", "summary"):
+        if k in payload and isinstance(payload[k], str):
+            val = payload[k]
+            if r"\n" in val:
+                val = val.replace(r"\r", "\r").replace(r"\n", "\n").replace(r"\t", "\t")
+            if r'\"' in val:
+                val = val.replace(r'\"', '"')
+            payload[k] = val
 
     code = payload.get("vba_code")
     summary = payload.get("summary")
